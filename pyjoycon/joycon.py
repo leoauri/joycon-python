@@ -45,10 +45,12 @@ class JoyCon:
         self._setup_sensors()
 
         # start talking with the joycon in a daemon thread
+        self.connected = threading.Event()
         self._update_input_report_thread \
             = threading.Thread(target=self._update_input_report)
         self._update_input_report_thread.setDaemon(True)
         self._update_input_report_thread.start()
+        self.connected.wait()
 
     def _open(self, vendor_id, product_id, serial):
         try:
@@ -111,16 +113,20 @@ class JoyCon:
         return report[7:size+7]
 
     def _update_input_report(self):  # daemon thread
-        while True:
-            report = self._read_input_report()
-            # TODO, handle input reports of type 0x21 and 0x3f
-            while report[0] != 0x30:
+        try:
+            while True:
                 report = self._read_input_report()
+                # TODO, handle input reports of type 0x21 and 0x3f
+                while report[0] != 0x30:
+                    report = self._read_input_report()
 
-            self._input_report = report
+                self._input_report = report
+                self.connected.set()
 
-            for callback in self._input_hooks:
-                callback(self)
+                for callback in self._input_hooks:
+                    callback(self)
+        except OSError:
+            self.connected.clear()
 
     def _read_joycon_data(self):
         color_data = self._spi_flash_read(0x6050, 6)
